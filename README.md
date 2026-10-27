@@ -122,7 +122,7 @@ start.bat
 
 Each script builds both images, waits until the web container is healthy, and opens http://localhost:8080. nginx serves the browser demo. Python, MediaPipe, OpenCV, and MuJoCo are baked into a second image. There is no database or object store. Recordings stay JSONL files in `recordings/` on the host.
 
-The header name and student number come from `.env`. Both scripts copy `.env.example` to `.env` when that file is missing. Edit `.env`, then run the script again, to change the credit. `.env` is not committed.
+The header name and student number come from `.env`. Compose passes that file into the web image build; the Dockerfile and Compose file do not contain a name. Both scripts copy `.env.example` to `.env` when that file is missing. Edit `.env`, then run the script again, to change the credit. `.env` is not committed.
 
 The `handarm` container exits 0 on purpose: the Python stack is in the image, and no MuJoCo process is left running. "Kamerasız izle" needs no camera. Run the Python suite with:
 

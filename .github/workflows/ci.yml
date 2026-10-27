@@ -48,7 +48,9 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: Build and start
-        run: docker compose up --build -d
+        run: |
+          test -f .env || cp .env.example .env
+          docker compose up --build -d
       - name: Wait until the web demo answers
         run: |
           for _ in $(seq 1 30); do

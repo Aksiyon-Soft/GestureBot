@@ -1,5 +1,28 @@
 # GestureBot
 
+GestureBot, [Advaith Dasu](https://github.com/advaithdasu)'nun [hand-control-robot](https://github.com/advaithdasu/hand-control-robot) projesinin Aksaray Üniversitesi için hazırlanmış revizyonudur. Aksiyon Soft bu revizyonu kamuoyuna açık olarak sergiler.
+
+Özgün çalışma, dizüstü kamerasının gördüğü eli 6 eksenli simüle bir kolun denetleyicisi yapar. El havada hareket eder, kol izler; çimdik kavrar, yumruk kavramayı bekletir. Donanım gerekmez. Aşağıdaki teknik bölümler bu özgün sistemi anlatır. Telif bildirimi [LICENSE](LICENSE) dosyasındadır ve MIT lisansı bu kopyanın tamamı için geçerlidir.
+
+## Köken
+
+| | |
+|---|---|
+| Özgün yazar | [Advaith Dasu](https://github.com/advaithdasu) |
+| Özgün depo | [advaithdasu/hand-control-robot](https://github.com/advaithdasu/hand-control-robot) |
+| Lisans | MIT, Copyright (c) 2026 Advaith Dasu |
+| Revizyon | Aksaray Üniversitesi için |
+| Sergi | Aksiyon Soft, kamuoyuna açık |
+
+Özgün depodaki el takibi, kamera uzayından robot uzayına eşleme, One Euro süzgeç, sönümlü en küçük kareler ters kinematiği, MuJoCo referansı ve tarayıcıdaki Three.js / Rapier portu bu revizyonun temelidir. Zincir ofsetleri, parmak hareketi, çarpışma modeli ve tutuş aynı matematik üzerindedir. Python autopilot etiketleri ve testler özgün dillerinde, İngilizce, durur.
+
+Bu revizyonun kendi katmanı sunum ve dağıtımdır:
+
+- Görünen ürün adı GestureBot'tur. Arayüz metinleri Türkçedir. Açık ve koyu tema, GestureBot logoları ve Aksaray Üniversitesi künyesi arayüze eklenmiştir.
+- Üst çubuktaki ad ve öğrenci numarası depoda sabit değildir. Compose, `.env` dosyasındaki `VITE_STUDENT_NAME` ve `VITE_STUDENT_NUMBER` değerlerini web imajının derlemesine geçirir.
+- Robotun görünen kabuğu, zemin ve taşınan küplerin renkleri yenilenmiştir. Eklem hedefleri ve fizik adımı özgün modeldedir.
+- macOS ve Linux için `./start.sh`, Windows için `start.bat` yalnızca çalışan bir Docker motoru ister. Python, Node, font ve model konak makineye kurulmaz. İki imaj vardır: tarayıcı demosunu sunan nginx ve Python / MuJoCo araçlarını taşıyan `handarm`.
+
 Real-time teleoperation of a simulated 6-DOF robot arm using nothing but a laptop webcam. Your hand is the controller: move it in the air and the arm follows, pinch to grip, make a fist to clutch. No hardware required.
 
 <p align="center">
@@ -134,4 +157,4 @@ docker compose run --rm handarm python -m pytest tests/ -q
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE). Copyright (c) 2026 Advaith Dasu. GestureBot, bu özgün çalışmanın Aksaray Üniversitesi için hazırlanmış ve Aksiyon Soft tarafından kamuya açık sergilenen revizyonudur. Özgün depo: [advaithdasu/hand-control-robot](https://github.com/advaithdasu/hand-control-robot).

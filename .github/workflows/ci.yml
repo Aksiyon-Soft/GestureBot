@@ -41,3 +41,31 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libegl1 libgl1 libglib2.0-0
       - run: pip install -r requirements.txt
       - run: python -m pytest tests/ -q
+
+  docker:
+    name: Docker images
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Build and start
+        run: docker compose up --build -d
+      - name: Wait until the web demo answers
+        run: |
+          for _ in $(seq 1 30); do
+            if curl -fsS -o /dev/null http://127.0.0.1:8080/; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "web demo did not become ready" >&2
+          docker compose logs
+          exit 1
+      - name: Python tests in the handarm image
+        run: docker compose run --rm handarm python -m pytest tests/ -q
+      - name: Demo assets are served
+        run: |
+          curl -fsS -o /dev/null -w "index %{http_code}\n" http://127.0.0.1:8080/
+          curl -fsSI http://127.0.0.1:8080/models/hand_landmarker.task | tee /tmp/task.headers
+          curl -fsSI http://127.0.0.1:8080/mediapipe/wasm/vision_wasm_internal.wasm | tee /tmp/wasm.headers
+          grep -qi 'content-type: application/octet-stream' /tmp/task.headers
+          grep -qi 'content-type: application/wasm' /tmp/wasm.headers

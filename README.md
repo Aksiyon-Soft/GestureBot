@@ -108,6 +108,24 @@ cd web && pnpm install && pnpm dev
 
 Both suites (71 Python, 70 vitest) run in CI on every push.
 
+## Docker
+
+Two images, one command. nginx serves the browser demo; Python, MediaPipe, OpenCV, and MuJoCo are baked into a second image. There is no database or object store. Recordings stay JSONL files in `recordings/` on the host.
+
+```bash
+docker compose up --build -d
+```
+
+Open http://localhost:8080. The webcam stays in the browser. "Watch it run" needs no camera.
+
+The `handarm` container exits 0 on purpose: the Python stack is in the image, and no MuJoCo process is left running. Later starts are `docker compose up -d` (dependencies are not reinstalled). Run the Python suite with:
+
+```bash
+docker compose run --rm handarm python -m pytest tests/ -q
+```
+
+`python -m handarm` opens an OpenCV window. Docker Desktop on macOS cannot pass a display or the webcam into that container; use the web demo above. On Linux, pass `DISPLAY` and, for live control, `/dev/video0`.
+
 ## License
 
 [MIT](LICENSE)

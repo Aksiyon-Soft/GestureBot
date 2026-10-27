@@ -1,4 +1,4 @@
-# Hand-Controlled Robot Arm
+# GestureBot
 
 Real-time teleoperation of a simulated 6-DOF robot arm using nothing but a laptop webcam. Your hand is the controller: move it in the air and the arm follows, pinch to grip, make a fist to clutch. No hardware required.
 
@@ -110,21 +110,27 @@ Both suites (71 Python, 70 vitest) run in CI on every push.
 
 ## Docker
 
-Two images, one command. nginx serves the browser demo; Python, MediaPipe, OpenCV, and MuJoCo are baked into a second image. There is no database or object store. Recordings stay JSONL files in `recordings/` on the host.
+GestureBot starts from Docker only. The host does not install Python, Node, fonts, or models. Docker must already be running.
 
 ```bash
-docker compose up --build -d
+# macOS or Linux
+./start.sh
+
+# Windows
+start.bat
 ```
 
-Open http://localhost:8080. The webcam stays in the browser. "Watch it run" needs no camera.
+Each script builds both images, waits until the web container is healthy, and opens http://localhost:8080. nginx serves the browser demo. Python, MediaPipe, OpenCV, and MuJoCo are baked into a second image. There is no database or object store. Recordings stay JSONL files in `recordings/` on the host.
 
-The `handarm` container exits 0 on purpose: the Python stack is in the image, and no MuJoCo process is left running. Later starts are `docker compose up -d` (dependencies are not reinstalled). Run the Python suite with:
+The header name and student number come from `.env`. Both scripts copy `.env.example` to `.env` when that file is missing. Edit `.env`, then run the script again, to change the credit. `.env` is not committed.
+
+The `handarm` container exits 0 on purpose: the Python stack is in the image, and no MuJoCo process is left running. "Kamerasız izle" needs no camera. Run the Python suite with:
 
 ```bash
 docker compose run --rm handarm python -m pytest tests/ -q
 ```
 
-`python -m handarm` opens an OpenCV window. Docker Desktop on macOS cannot pass a display or the webcam into that container; use the web demo above. On Linux, pass `DISPLAY` and, for live control, `/dev/video0`.
+`python -m handarm` opens an OpenCV window. Docker Desktop on macOS cannot pass a display or the webcam into that container; use GestureBot in the browser. On Linux, pass `DISPLAY` and, for live control, `/dev/video0`.
 
 ## License
 

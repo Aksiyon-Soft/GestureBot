@@ -8,6 +8,10 @@ COPY web/package.json web/pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
 
 COPY web/ ./
+ARG VITE_STUDENT_NAME="Mehmet Doğan"
+ARG VITE_STUDENT_NUMBER="000000000"
+ENV VITE_STUDENT_NAME=$VITE_STUDENT_NAME
+ENV VITE_STUDENT_NUMBER=$VITE_STUDENT_NUMBER
 RUN pnpm build
 
 FROM nginx:1.27-alpine

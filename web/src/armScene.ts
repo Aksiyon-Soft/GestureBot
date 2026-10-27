@@ -35,31 +35,48 @@ import {
   vecSub,
 } from "./transforms";
 
-/** The page's accent color, so a rebrand is one CSS edit (style.css --accent). */
-function cssAccent(): number {
-  const v = typeof getComputedStyle === "function"
-    ? getComputedStyle(document.documentElement).getPropertyValue("--accent").trim()
-    : "";
-  return v ? new THREE.Color(v).getHex() : 0xf27317;
+const SHELL = 0xf7f8fa;
+const CYAN = 0x22d3ee;
+const JOINT_LIGHT = 0x2a3038;
+const JOINT_DARK = 0x14181c;
+
+type PaintRole = "shell" | "joint" | "tray";
+
+/** Resolve a theme token to hex. Computed colors may be lab()/oklch(), which Three.Color cannot parse. */
+function tokenHex(name: string, fallback: number): number {
+  if (typeof document === "undefined" || typeof getComputedStyle !== "function") return fallback;
+  const probe = document.createElement("span");
+  probe.style.color = `var(${name})`;
+  document.documentElement.appendChild(probe);
+  const computed = getComputedStyle(probe).color;
+  probe.remove();
+  if (!computed) return fallback;
+  const canvas = document.createElement("canvas");
+  canvas.width = 1;
+  canvas.height = 1;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) return fallback;
+  ctx.fillStyle = "#000000";
+  ctx.fillStyle = computed;
+  if (ctx.fillStyle === "#000000" && !/^#000000$/i.test(computed) && !/rgba?\(\s*0\s*,\s*0\s*,\s*0/.test(computed)) {
+    return fallback;
+  }
+  ctx.fillRect(0, 0, 1, 1);
+  const px = ctx.getImageData(0, 0, 1, 1).data;
+  return (px[0] << 16) | (px[1] << 8) | px[2];
 }
 
-const COLORS = {
-  dark: 0x33383f,
-  orange: cssAccent(),
-  steel: 0xc0c5c9,
-  blue: 0x2673e6,
-  tray: 0x8c6b47,
-  floor1: 0x33363e,
-  floor2: 0x3d4049,
-  target: 0x34e07a,
-};
+function themeIsDark(): boolean {
+  return typeof document !== "undefined" && document.documentElement.classList.contains("dark");
+}
+
+const CUBE_FALLBACK = [0x3b6fd8, 0xd4a24a];
 
 const HELD_MAX_SPEED = 4.0; // m/s the servo may use to catch up to the tool
 const HELD_MAX_ANGVEL = 25.0; // rad/s
 const RELEASE_MAX_SPEED = 1.5; // m/s carried over when the gripper opens
 const HIGHLIGHT_INTENSITY = 0.45;
 const PHYSICS_HZ = 120;
-const CUBE_COLORS = [COLORS.orange, COLORS.blue];
 
 interface Cube {
   body: RAPIER.RigidBody;
@@ -78,6 +95,14 @@ export class ArmScene {
   private jointGroups: THREE.Group[] = [];
   private fingerL!: THREE.Mesh;
   private fingerR!: THREE.Mesh;
+  private shellMats: THREE.MeshStandardMaterial[] = [];
+  private jointMats: THREE.MeshStandardMaterial[] = [];
+  private floorMats: THREE.MeshStandardMaterial[] = [];
+  private trayMats: THREE.MeshStandardMaterial[] = [];
+  private markerMats: THREE.Material[] = [];
+  private ringMat!: THREE.MeshStandardMaterial;
+  private eyeMat!: THREE.MeshStandardMaterial;
+  private hemi!: THREE.HemisphereLight;
   private targetMarker!: THREE.Mesh;
   private floorRing!: THREE.Mesh;
   private dropLine!: THREE.Line;
@@ -99,8 +124,8 @@ export class ArmScene {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    this.scene.background = new THREE.Color(0x16181d);
-    this.scene.fog = new THREE.Fog(0x16181d, 2.5, 6);
+    this.scene.background = new THREE.Color(0x121416);
+    this.scene.fog = new THREE.Fog(0x121416, 2.5, 6);
     // Surface a dead GPU context as an error the render loop can report,
     // instead of silently drawing nothing forever.
     canvas.addEventListener("webglcontextlost", (e) => {
@@ -113,8 +138,8 @@ export class ArmScene {
     this.camera.position.set(1.35, -0.85, 0.75);
     this.camera.lookAt(0.3, 0, 0.25);
 
-    const hemi = new THREE.HemisphereLight(0xffffff, 0x444455, 1.1);
-    this.scene.add(hemi);
+    this.hemi = new THREE.HemisphereLight(0xffffff, 0x1a2a24, 1.0);
+    this.scene.add(this.hemi);
     const dir = new THREE.DirectionalLight(0xffffff, 2.0);
     dir.position.set(0.5, -0.6, 1.6);
     dir.castShadow = true;
@@ -133,6 +158,7 @@ export class ArmScene {
     this.buildArm();
     this.buildObjects();
     this.buildMarkers();
+    this.applyTheme();
   }
 
   // ---------------- scene construction ----------------
@@ -141,9 +167,11 @@ export class ArmScene {
     // One instanced mesh per checker color: 2 draw calls instead of 256.
     const n = 8, size = 0.5;
     const geom = new THREE.PlaneGeometry(size, size);
-    const mats = [COLORS.floor1, COLORS.floor2].map(
-      (color) => new THREE.MeshStandardMaterial({ color, roughness: 0.9 }),
-    );
+    const mats = [0x22262c, 0x2c3138].map((color) => {
+      const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.92, metalness: 0.02 });
+      this.floorMats.push(mat);
+      return mat;
+    });
     const tiles = mats.map((mat) => {
       const inst = new THREE.InstancedMesh(geom, mat, 2 * n * n);
       inst.receiveShadow = true;
@@ -164,20 +192,25 @@ export class ArmScene {
     );
   }
 
-  private box(w: number, d: number, h: number, color: number): THREE.Mesh {
-    const m = new THREE.Mesh(
-      new THREE.BoxGeometry(w, d, h),
-      new THREE.MeshStandardMaterial({ color, roughness: 0.55, metalness: 0.15 }),
-    );
+  private material(role: PaintRole): THREE.MeshStandardMaterial {
+    const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.45, metalness: 0.12 });
+    if (role === "shell") this.shellMats.push(mat);
+    else if (role === "joint") this.jointMats.push(mat);
+    else this.trayMats.push(mat);
+    return mat;
+  }
+
+  private box(w: number, d: number, h: number, role: PaintRole): THREE.Mesh {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, d, h), this.material(role));
     m.castShadow = true;
     m.receiveShadow = true;
     return m;
   }
 
-  private cylinder(radius: number, height: number, color: number): THREE.Mesh {
+  private cylinder(radius: number, height: number, role: PaintRole): THREE.Mesh {
     const m = new THREE.Mesh(
       new THREE.CylinderGeometry(radius, radius, height, 32),
-      new THREE.MeshStandardMaterial({ color, roughness: 0.55, metalness: 0.15 }),
+      this.material(role),
     );
     m.rotation.x = Math.PI / 2; // three cylinders are y-axis; we need z-axis
     m.castShadow = true;
@@ -188,44 +221,59 @@ export class ArmScene {
   /** Mirror the MJCF: nested groups, one per joint, meshes as in scene.xml. */
   private buildArm(): void {
     const base = new THREE.Group();
-    const baseMesh = this.cylinder(0.07, 0.1, COLORS.dark);
+    const baseMesh = this.cylinder(0.07, 0.1, "joint");
     baseMesh.position.z = 0.05;
     base.add(baseMesh);
+    this.ringMat = new THREE.MeshStandardMaterial({
+      color: 0x1a9a62, emissive: 0x1a9a62, emissiveIntensity: 0.35, roughness: 0.35, metalness: 0.2,
+    });
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.09, 0.011, 14, 48), this.ringMat);
+    ring.position.z = 0.018;
+    ring.castShadow = true;
+    base.add(ring);
     this.scene.add(base);
 
     const linkSpecs: ((g: THREE.Group) => void)[] = [
       (g) => {
-        const m = this.cylinder(0.055, 0.08, COLORS.orange);
+        const m = this.cylinder(0.055, 0.08, "joint");
         m.position.z = 0.04;
         g.add(m);
       },
       (g) => {
-        const m = this.box(0.09, 0.07, 0.3, COLORS.steel);
+        const m = this.cylinder(0.042, 0.3, "shell");
         m.position.z = 0.15;
         g.add(m);
       },
       (g) => {
-        const m = this.box(0.075, 0.06, 0.25, COLORS.orange);
+        const m = this.cylinder(0.036, 0.25, "shell");
         m.position.z = 0.125;
         g.add(m);
       },
       (g) => {
-        const m = this.cylinder(0.045, 0.06, COLORS.steel);
+        const m = this.cylinder(0.045, 0.06, "joint");
         m.position.z = 0.03;
         g.add(m);
       },
       (g) => {
-        const m = this.cylinder(0.04, 0.06, COLORS.orange);
+        const m = this.cylinder(0.04, 0.06, "joint");
         m.position.z = 0.03;
         g.add(m);
       },
       (g) => {
-        const palm = this.box(0.08, 0.05, 0.04, COLORS.dark);
+        const palm = this.box(0.08, 0.05, 0.04, "joint");
         palm.position.z = 0.02;
         g.add(palm);
-        this.fingerL = this.box(0.02, 0.012, 0.08, COLORS.steel);
-        this.fingerR = this.box(0.02, 0.012, 0.08, COLORS.steel);
+        this.fingerL = this.box(0.02, 0.012, 0.08, "shell");
+        this.fingerR = this.box(0.02, 0.012, 0.08, "shell");
         g.add(this.fingerL, this.fingerR);
+        this.eyeMat = new THREE.MeshStandardMaterial({
+          color: CYAN, emissive: CYAN, emissiveIntensity: 0.85, roughness: 0.25,
+        });
+        for (const y of [-0.016, 0.016]) {
+          const eye = new THREE.Mesh(new THREE.SphereGeometry(0.008, 16, 12), this.eyeMat);
+          eye.position.set(0, y, 0.048);
+          g.add(eye);
+        }
       },
     ];
 
@@ -252,7 +300,7 @@ export class ArmScene {
       [[0.006, 0.09, 0.025], [-0.084, 0, 0.025]],
     ];
     for (const [half, local] of trayParts) {
-      const mesh = this.box(half[0] * 2, half[1] * 2, half[2] * 2, COLORS.tray);
+      const mesh = this.box(half[0] * 2, half[1] * 2, half[2] * 2, "tray");
       mesh.position.set(
         trayCenter[0] + local[0],
         trayCenter[1] + local[1],
@@ -266,10 +314,10 @@ export class ArmScene {
       );
     }
 
-    SCENE.cubeStarts.forEach((pos, i) => this.spawnCube(pos, CUBE_COLORS[i]));
+    SCENE.cubeStarts.forEach((pos) => this.spawnCube(pos));
   }
 
-  private spawnCube(pos: Vec3, color: number): void {
+  private spawnCube(pos: Vec3): void {
     const body = this.world.createRigidBody(
       RAPIER.RigidBodyDesc.dynamic().setTranslation(...pos).setCcdEnabled(true),
     );
@@ -280,40 +328,97 @@ export class ArmScene {
       body,
     );
     const side = SCENE.cubeHalf * 2;
-    const mesh = this.box(side, side, side, color);
+    const mesh = this.box(side, side, side, "shell");
     const material = mesh.material as THREE.MeshStandardMaterial;
-    material.emissive.setHex(color);
+    this.shellMats.pop();
+    material.emissive.setHex(0xffffff);
     material.emissiveIntensity = 0;
     this.scene.add(mesh);
     this.cubes.push({ body, mesh, material, held: false });
   }
 
   private buildMarkers(): void {
-    this.targetMarker = new THREE.Mesh(
-      new THREE.SphereGeometry(0.015),
-      new THREE.MeshBasicMaterial({ color: COLORS.target, transparent: true, opacity: 0.6 }),
-    );
+    const targetMat = new THREE.MeshBasicMaterial({ color: 0x1a9a62, transparent: true, opacity: 0.6 });
+    this.markerMats.push(targetMat);
+    this.targetMarker = new THREE.Mesh(new THREE.SphereGeometry(0.015), targetMat);
     this.scene.add(this.targetMarker);
 
     // Depth cue: a ring on the floor directly under the tool plus a drop
     // line up to it, so the operator can judge x/y without a second view.
-    this.floorRing = new THREE.Mesh(
-      new THREE.RingGeometry(0.018, 0.026, 32),
-      new THREE.MeshBasicMaterial({
-        color: COLORS.target, transparent: true, opacity: 0.7, depthWrite: false,
-      }),
-    );
+    const ringMat = new THREE.MeshBasicMaterial({
+      color: 0x1a9a62, transparent: true, opacity: 0.7, depthWrite: false,
+    });
+    this.markerMats.push(ringMat);
+    this.floorRing = new THREE.Mesh(new THREE.RingGeometry(0.018, 0.026, 32), ringMat);
     this.scene.add(this.floorRing);
     this.dropLine = new THREE.Line(
       new THREE.BufferGeometry().setFromPoints([
         new THREE.Vector3(), new THREE.Vector3(),
       ]),
       new THREE.LineBasicMaterial({
-        color: COLORS.target, transparent: true, opacity: 0.35, depthWrite: false,
+        color: 0x1a9a62, transparent: true, opacity: 0.35, depthWrite: false,
       }),
     );
+    this.markerMats.push(this.dropLine.material as THREE.Material);
     this.dropLine.frustumCulled = false;
     this.scene.add(this.dropLine);
+  }
+
+  /** Recolor visible materials from the page theme. Joint frames stay put. */
+  applyTheme(): void {
+    const dark = themeIsDark();
+    const primary = tokenHex("--primary", 0x1a9a62);
+    const background = tokenHex("--background", dark ? 0x121416 : 0xf7f7f7);
+    const card = tokenHex("--card", dark ? 0x1c1c1c : 0xf3f3f3);
+    const muted = tokenHex("--muted", dark ? 0x2a2a2a : 0xededed);
+    const border = tokenHex("--border", dark ? 0x333333 : 0xdcdcdc);
+    const cubeA = tokenHex("--chart-2", CUBE_FALLBACK[0]);
+    const cubeB = tokenHex("--chart-4", CUBE_FALLBACK[1]);
+    const bg = new THREE.Color(background);
+
+    this.scene.background = bg;
+    this.scene.fog = new THREE.Fog(background, 2.5, 6);
+    this.hemi.color.setHex(0xffffff);
+    this.hemi.groundColor.setHex(dark ? 0x123028 : 0xd5ebe4);
+    this.hemi.intensity = dark ? 0.85 : 1.2;
+
+    for (const mat of this.shellMats) {
+      mat.color.setHex(SHELL);
+      mat.emissive.setHex(0x000000);
+      mat.emissiveIntensity = 0;
+      mat.roughness = 0.32;
+      mat.metalness = 0.06;
+    }
+    for (const mat of this.jointMats) {
+      mat.color.setHex(dark ? JOINT_DARK : JOINT_LIGHT);
+      mat.emissive.setHex(primary);
+      mat.emissiveIntensity = dark ? 0.16 : 0;
+      mat.roughness = 0.42;
+      mat.metalness = 0.48;
+    }
+    const floors = dark ? [background, card] : [muted, border];
+    this.floorMats.forEach((mat, i) => mat.color.setHex(floors[i] ?? floors[0]));
+    for (const mat of this.trayMats) {
+      mat.color.setHex(dark ? 0x3a414c : 0xd5d8de);
+      mat.roughness = 0.62;
+      mat.metalness = dark ? 0.28 : 0.08;
+    }
+    this.ringMat.color.setHex(primary);
+    this.ringMat.emissive.setHex(primary);
+    this.ringMat.emissiveIntensity = dark ? 0.55 : 0.18;
+    this.eyeMat.color.setHex(CYAN);
+    this.eyeMat.emissive.setHex(CYAN);
+    this.eyeMat.emissiveIntensity = dark ? 1.05 : 0.4;
+    for (const mat of this.markerMats) {
+      if (mat instanceof THREE.MeshBasicMaterial || mat instanceof THREE.LineBasicMaterial) {
+        mat.color.setHex(primary);
+      }
+    }
+    this.cubes.forEach((cube, i) => {
+      const hex = i % 2 === 0 ? cubeA : cubeB;
+      cube.material.color.setHex(hex);
+      cube.material.emissive.setHex(hex);
+    });
   }
 
   // ---------------- commands (same interface as the Python ArmSim) ----------------

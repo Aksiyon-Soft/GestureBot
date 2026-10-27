@@ -6,6 +6,7 @@
  * ending in the same IK -> command -> physics -> render path.
  */
 
+import "./style.css";
 import { TeleopController } from "./app";
 import type { ArmScene } from "./armScene";
 import type { Autopilot } from "./autopilot";
@@ -149,7 +150,7 @@ function enterSession(s: Session): void {
   btnCal.disabled = btnOri.disabled = s.mode !== "hand";
   btnFreeze.disabled = btnReset.disabled = false;
   btnFreeze.classList.remove("active");
-  btnOri.textContent = `Orientation: ${s.ctl.orientationOn ? "on" : "off"}`;
+  btnOri.textContent = `Yönelim: ${s.ctl.orientationOn ? "açık" : "kapalı"}`;
 }
 
 // ---------------- drawing ----------------
@@ -170,11 +171,58 @@ function sizeOverlay(panelW: number, panelH: number): void {
   if (overlay.height !== h) overlay.height = h;
 }
 
-/** Skeleton keypoints use the page accent (style.css --accent). */
-const ACCENT =
-  getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#f27317";
-const SKELETON = "rgba(80, 200, 255, 0.9)";
-const SKELETON_FROZEN = "rgba(255, 92, 92, 0.9)";
+/** Keypoint fill follows --primary. Canvas and Three.js need a resolved rgb. */
+const THEME_KEY = "gesturebot-theme";
+let accentFill = "rgb(26, 154, 98)";
+const SKELETON = "rgba(34, 211, 238, 0.92)";
+const SKELETON_FROZEN = "rgba(255, 92, 92, 0.92)";
+
+const STATUS_TR: Record<string, string> = {
+  starting: "başlıyor",
+  resting: "dinleniyor",
+  done: "bitti",
+  "reaching for the cube": "küpe uzanıyor",
+  descending: "alçalıyor",
+  "closing the gripper": "kıskaç kapanıyor",
+  lifting: "kaldırıyor",
+  "carrying to the tray": "tepsiye taşıyor",
+  lowering: "indiriyor",
+  releasing: "bırakıyor",
+  retreating: "geri çekiliyor",
+};
+
+function trStatus(status: string): string {
+  return STATUS_TR[status] ?? status;
+}
+
+function refreshAccent(): void {
+  const probe = document.createElement("span");
+  probe.style.color = "var(--primary)";
+  document.documentElement.appendChild(probe);
+  const computed = getComputedStyle(probe).color;
+  probe.remove();
+  if (computed) accentFill = computed;
+}
+
+function syncFavicon(): void {
+  const dark = document.documentElement.classList.contains("dark");
+  document.getElementById("favicon")?.setAttribute(
+    "href",
+    dark ? "/brand/gesturebot-dark.png" : "/brand/gesturebot-light.png",
+  );
+}
+
+function applyPageTheme(dark: boolean): void {
+  document.documentElement.classList.toggle("dark", dark);
+  try {
+    localStorage.setItem(THEME_KEY, dark ? "dark" : "light");
+  } catch {
+    /* private mode */
+  }
+  syncFavicon();
+  refreshAccent();
+  scenePromise?.then((scene) => scene.applyTheme()).catch(() => {});
+}
 
 function drawSkeleton(lm: Landmarks, frozen: boolean): void {
   const ctx = overlay.getContext("2d")!;
@@ -203,7 +251,7 @@ function drawSkeleton(lm: Landmarks, frozen: boolean): void {
     ctx.lineTo(...px(lm[b]));
     ctx.stroke();
   }
-  ctx.fillStyle = ACCENT;
+  ctx.fillStyle = accentFill;
   for (const p of lm) {
     ctx.beginPath();
     ctx.arc(...px(p), 4 * dpr(), 0, Math.PI * 2);
@@ -251,30 +299,30 @@ function updateHud(s: Session, handVisible: boolean): void {
   const ik = ctl.lastIK;
   const fps = frameMs.mean() > 0 ? 1000 / frameMs.mean() : 0;
   const mode: Run = ctl.manualFreeze
-    ? { t: "FROZEN (button)", c: "warn" }
+    ? { t: "DONDURULDU (düğme)", c: "warn" }
     : s.mode === "autopilot"
-      ? { t: `AUTOPILOT — ${s.autopilot.status}`, c: "good" }
+      ? { t: `OTOMATİK — ${trStatus(s.autopilot.status)}`, c: "good" }
       : ctl.clutched
-        ? { t: "CLUTCHED (fist) — open your hand to resume", c: "warn" }
-        : { t: ctl.orientationOn ? "pos + orientation" : "position only" };
+        ? { t: "KAVRAMA (yumruk) — devam için elini aç", c: "warn" }
+        : { t: ctl.orientationOn ? "konum + yönelim" : "yalnızca konum" };
   const grip: Run = ctl.gripLatched
-    ? { t: "LATCHED", c: "warn" }
+    ? { t: "KİLİTLİ", c: "warn" }
     : ctl.gripping || (s.mode === "autopilot" && ctl.gripOpening < 0.5)
-      ? { t: "CLOSED", c: "warn" }
-      : { t: "open" };
+      ? { t: "KAPALI", c: "warn" }
+      : { t: "açık" };
   const timing = s.mode === "hand"
-    ? `fps ${fps.toFixed(0).padStart(3)}   detect ${detectMs.mean().toFixed(1)} ms   tick ${tickMs.mean().toFixed(2)} ms`
-    : `fps ${fps.toFixed(0).padStart(3)}   tick ${tickMs.mean().toFixed(2)} ms`;
-  const lines: Run[][] = [[{ t: timing }], [{ t: "mode: " }, mode]];
+    ? `fps ${fps.toFixed(0).padStart(3)}   algı ${detectMs.mean().toFixed(1)} ms   adım ${tickMs.mean().toFixed(2)} ms`
+    : `fps ${fps.toFixed(0).padStart(3)}   adım ${tickMs.mean().toFixed(2)} ms`;
+  const lines: Run[][] = [[{ t: timing }], [{ t: "mod: " }, mode]];
   if (s.mode === "hand") {
     lines.push([
-      { t: "hand: " },
-      handVisible ? { t: "tracking", c: "good" } : { t: "NOT FOUND", c: "warn" },
+      { t: "el: " },
+      handVisible ? { t: "izleniyor", c: "good" } : { t: "BULUNAMADI", c: "warn" },
     ]);
   }
   lines.push([
-    { t: "grip: " }, grip, { t: `  aperture ${ctl.gripOpening.toFixed(2)}` },
-    ...(scene.holding ? [{ t: "  ● holding cube", c: "good" as const }] : []),
+    { t: "kavrama: " }, grip, { t: `  açıklık ${ctl.gripOpening.toFixed(2)}` },
+    ...(scene.holding ? [{ t: "  ● küp tutuluyor", c: "good" as const }] : []),
   ]);
   if (ik) {
     lines.push([
@@ -283,17 +331,17 @@ function updateHud(s: Session, handVisible: boolean): void {
     ]);
   }
   if (s.mode === "autopilot") {
-    lines.push([{ t: "same IK + physics as hand control — enable the camera to take over", c: "muted" }]);
+    lines.push([{ t: "el kontrolüyle aynı ters kinematik ve fizik — devralmak için kamerayı aç", c: "muted" }]);
   } else if (!ctl.calibrated) {
     lines.push([
       handVisible
-        ? { t: `hold still to lock on  ${progressBar(ctl.calibProgress)}`, c: "warn" }
-        : { t: "show your open hand to the camera", c: "warn" },
+        ? { t: `kilit için sabit dur  ${progressBar(ctl.calibProgress)}`, c: "warn" }
+        : { t: "açık elini kameraya göster", c: "warn" },
     ]);
   } else if (scene.holding) {
-    lines.push([{ t: "open your hand to release", c: "muted" }]);
+    lines.push([{ t: "bırakmak için elini aç", c: "muted" }]);
   } else if (scene.canGrasp) {
-    lines.push([{ t: "cube in reach — pinch to grab", c: "good" }]);
+    lines.push([{ t: "küp menzilde — tutmak için çimdikle", c: "good" }]);
   }
   renderHud(lines);
 }
@@ -338,7 +386,7 @@ function runLoop(
       // A lost GPU context never comes back for this renderer; rebuild
       // the engine on the next start instead of reusing a dead one.
       if (/context lost/i.test(msg)) discardEngine();
-      stopToLanding(`The session crashed (${msg}). Start again to retry.`);
+      stopToLanding(`Oturum çöktü (${msg}). Yeniden denemek için başlatın.`);
     }
   };
   requestAnimationFrame(loop);
@@ -352,15 +400,15 @@ const ROUND_DONE_PAUSE_MS = 2500;
 function startupError(err: unknown): string {
   const msg = err instanceof Error ? err.message : String(err);
   if (err instanceof DOMException && err.name === "NotAllowedError") {
-    return "Camera access was denied — enable it in your browser's site settings and try again.";
+    return "Kamera izni reddedildi. Tarayıcı site ayarlarından izin verip yeniden deneyin.";
   }
   if (err instanceof DOMException && err.name === "NotFoundError") {
-    return "No camera found. Plug one in (or allow camera access) and try again.";
+    return "Kamera bulunamadı. Bir kamera bağlayın veya erişime izin verip yeniden deneyin.";
   }
   if (/WebGL/i.test(msg)) {
-    return "This browser has no WebGL support (required for the 3D simulation). Try Chrome, Edge, or Safari with hardware acceleration enabled.";
+    return "Bu tarayıcıda WebGL yok (3B simülasyon için gerekli). Donanım hızlandırmalı Chrome, Edge veya Safari deneyin.";
   }
-  return `Failed to start: ${msg}`;
+  return `Başlatılamadı: ${msg}`;
 }
 
 const mb = (bytes: number): string => (bytes / 1e6).toFixed(1);
@@ -377,20 +425,20 @@ async function start(): Promise<void> {
   };
   let stream: MediaStream | null = null;
   try {
-    status("Loading 3D engine…", null);
+    status("3B motor yükleniyor…", null);
     const scene = await loadScene();
-    status("Loading hand tracker…", null);
+    status("El izleyici yükleniyor…", null);
     progressListener = (loaded, total) =>
       status(
         total
-          ? `Downloading hand model  ${mb(loaded)} / ${mb(total)} MB`
-          : `Downloading hand model  ${mb(loaded)} MB`,
+          ? `El modeli iniyor  ${mb(loaded)} / ${mb(total)} MB`
+          : `El modeli iniyor  ${mb(loaded)} MB`,
         total ? loaded / total : null,
       );
     const tracker = await loadTracker();
     progressListener = null;
 
-    status("Requesting camera…", null);
+    status("Kamera isteniyor…", null);
     stream = await navigator.mediaDevices.getUserMedia({
       video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" },
       audio: false,
@@ -400,7 +448,7 @@ async function start(): Promise<void> {
       video.onloadedmetadata = () => res();
       // A granted stream that never delivers metadata (stalled virtual
       // camera) would otherwise hang the UI at "Requesting camera…" forever.
-      setTimeout(() => rej(new Error("Camera stream never became ready.")), 10_000);
+      setTimeout(() => rej(new Error("Kamera akışı hazır olmadı.")), 10_000);
     });
     await video.play();
 
@@ -434,7 +482,7 @@ async function start(): Promise<void> {
 
     runLoop(s, (dt, now) => {
       if (cameraLost) {
-        stopToLanding("Camera disconnected — start again to reconnect.");
+        stopToLanding("Kamera koptu — yeniden bağlanmak için başlatın.");
         return "stop";
       }
       if (!hasRvfc && video.currentTime !== lastVideoTime) {
@@ -478,7 +526,7 @@ async function start(): Promise<void> {
 async function startAutopilot(): Promise<void> {
   autopilotBtn.disabled = true;
   try {
-    setLoading("Loading 3D engine…", null);
+    setLoading("3B motor yükleniyor…", null);
     const [scene, { Autopilot }] = await Promise.all([loadScene(), import("./autopilot")]);
     scene.reset();
     const ctl = new TeleopController(scene);
@@ -530,7 +578,7 @@ function wireControls(): void {
   const toggleOrientation = (): void => {
     if (active?.mode !== "hand") return;
     active.ctl.orientationOn = !active.ctl.orientationOn;
-    btnOri.textContent = `Orientation: ${active.ctl.orientationOn ? "on" : "off"}`;
+    btnOri.textContent = `Yönelim: ${active.ctl.orientationOn ? "açık" : "kapalı"}`;
   };
   const toggleFreeze = (): void => {
     if (!active) return;
@@ -563,6 +611,22 @@ function wireControls(): void {
     }
   });
 
+  const shell = document.getElementById("shell")!;
+  const syncFullscreen = (): void => {
+    const on = document.fullscreenElement === shell;
+    document.getElementById("btn-fullscreen")?.setAttribute("aria-pressed", String(on));
+  };
+  document.getElementById("btn-theme")?.addEventListener("click", () => {
+    applyPageTheme(!document.documentElement.classList.contains("dark"));
+  });
+  document.getElementById("btn-fullscreen")?.addEventListener("click", () => {
+    const run = document.fullscreenElement === shell
+      ? document.exitFullscreen()
+      : shell.requestFullscreen();
+    void run.catch(() => {});
+  });
+  document.addEventListener("fullscreenchange", syncFullscreen);
+
   startBtn.addEventListener("click", () => void start());
   takeoverBtn.addEventListener("click", () => void start());
   autopilotBtn.addEventListener("click", () => void startAutopilot());
@@ -582,4 +646,17 @@ function wireControls(): void {
   prefetch(autopilotBtn, loadScene);
 }
 
+function applyCredit(): void {
+  const name = (import.meta.env.VITE_STUDENT_NAME ?? "").trim();
+  const number = (import.meta.env.VITE_STUDENT_NUMBER ?? "").trim();
+  const student = document.getElementById("student-credit");
+  if (!student) return;
+  const line = [name, number].filter((part) => part.length > 0).join(" · ");
+  student.textContent = line;
+  student.hidden = line.length === 0;
+}
+
+applyCredit();
+refreshAccent();
+syncFavicon();
 wireControls();

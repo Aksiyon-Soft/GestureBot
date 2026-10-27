@@ -20,9 +20,9 @@ for arg in "$@"; do
 done
 
 if [ "$needs_display" -eq 1 ] && [ "$is_help" -eq 0 ] && [ -z "${DISPLAY:-}" ]; then
-    echo "This command opens an OpenCV window and needs a display."
-    echo "Docker Desktop on macOS cannot pass a display or the webcam into this container."
-    echo "Use the web demo at http://localhost:8080 (Watch it run needs no camera)."
+    echo "Bu komut bir OpenCV penceresi açar ve ekran ister."
+    echo "macOS Docker Desktop bu konteynere ekran veya kamera veremez."
+    echo "GestureBot arayüzünü kullanın: http://localhost:8080 (Kamerasız izle kamera istemez)."
     exit 1
 fi
 

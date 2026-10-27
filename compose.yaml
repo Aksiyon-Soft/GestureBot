@@ -5,6 +5,9 @@ services:
     build:
       context: .
       dockerfile: docker/web.Dockerfile
+      args:
+        VITE_STUDENT_NAME: ${VITE_STUDENT_NAME:-Mehmet Doğan}
+        VITE_STUDENT_NUMBER: ${VITE_STUDENT_NUMBER:-000000000}
     image: hand-control-robot-web:local
     ports:
       - "8080:8080"

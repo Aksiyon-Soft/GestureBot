@@ -40,7 +40,7 @@ from .overlay import compose_split, draw_gripper_bar, draw_hand_skeleton, draw_h
 from .recorder import Recorder, load_recording
 from .sim import ArmSim
 
-WINDOW = "Hand-Controlled Robot Arm"
+WINDOW = "GestureBot"
 
 
 class TeleopApp:
